@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/teambition/fastlimiter"
+	"github.com/mushroomsir/fastlimiter"
 )
 
 func main() {
