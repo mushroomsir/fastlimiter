@@ -76,7 +76,7 @@ func TestFastlimiter(t *testing.T) {
 		limiter := fastlimiter.New(&fastlimiter.Options{})
 
 		id := genID()
-		policy := []int32{3, 200, 2, 300}
+		policy := []int32{3, 100, 2, 200}
 		res, err := limiter.Get(id, policy...)
 		assert.Nil(err)
 		assert.Equal(2, res.Remaining)
@@ -90,7 +90,7 @@ func TestFastlimiter(t *testing.T) {
 		assert.Equal(-1, res.Remaining)
 		assert.True(res.Reset.After(time.Now()))
 
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(res.Duration + time.Millisecond)
 		res, err = limiter.Get(id, policy...)
 		assert.Equal(1, res.Remaining)
 
@@ -99,7 +99,7 @@ func TestFastlimiter(t *testing.T) {
 		res, err = limiter.Get(id, policy...)
 		assert.Equal(-1, res.Remaining)
 
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(res.Duration + time.Millisecond)
 		res, err = limiter.Get(id, policy...)
 		assert.Equal(2, res.Remaining)
 	})
@@ -159,13 +159,13 @@ func TestFastlimiter(t *testing.T) {
 		assert.Equal(10, res.Total)
 		assert.Equal(9, res.Remaining)
 
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(res.Duration + time.Millisecond)
 		limiter.Clean()
 		res, _ = limiter.Get(id, policy...)
 		assert.Equal(10, res.Total)
 		assert.Equal(9, res.Remaining)
 
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(res.Duration + time.Millisecond)
 		limiter.Clean()
 		res, _ = limiter.Get(id, policy...)
 		assert.Equal(10, res.Total)
@@ -179,7 +179,7 @@ func TestFastlimiter(t *testing.T) {
 		for i := 0; i < 1000; i++ {
 			go limiter.Get(id, policy...)
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(300 * time.Millisecond)
 
 		res, err := limiter.Get(id, policy...)
 		assert.Nil(err)
@@ -199,7 +199,7 @@ func TestFastlimiter(t *testing.T) {
 		assert.Nil(err)
 		assert.Equal(100, res.Total)
 		assert.Equal(99, res.Remaining)
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(res.Duration + time.Millisecond)
 		res, err = limiter.Get(id, policy...)
 		assert.Equal(100, res.Total)
 		assert.Equal(99, res.Remaining)

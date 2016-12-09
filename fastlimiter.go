@@ -98,9 +98,12 @@ func (l *FastLimiter) Remove(id string) {
 func (l *FastLimiter) getResult(id string, policy ...int32) (Result, error) {
 	var result Result
 	res := l.getLimit(id, policy...)
+
+	remaining := atomic.LoadInt32(&res.Remaining)
+	total := atomic.LoadInt32(&res.Total)
 	result = Result{
-		Remaining: int(res.Remaining),
-		Total:     int(res.Total),
+		Remaining: int(remaining),
+		Total:     int(total),
 		Duration:  res.Duration,
 		Reset:     res.Expire,
 	}
