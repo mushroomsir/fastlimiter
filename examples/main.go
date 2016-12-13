@@ -13,10 +13,10 @@ import (
 
 func main() {
 
-	limiter := fastlimiter.New(&fastlimiter.Options{})
+	limiter := fastlimiter.New(fastlimiter.Options{})
 
 	http.HandleFunc("/a", func(w http.ResponseWriter, r *http.Request) {
-		policy := []int32{3, 30000, 2, 60000}
+		policy := []int{3, 30000, 2, 60000}
 		res, err := limiter.Get(r.URL.Path, policy...)
 		if err != nil {
 			http.Error(w, err.Error(), 500)

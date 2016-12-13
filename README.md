@@ -17,9 +17,9 @@ go get github.com/mushroomsir/fastlimiter
 Try into github.com/teambition/fastlimiter directory:
 
 ```bash
-go run ratelimiter/main.go
+go run examples/main.go
 ```
-Visit: http://127.0.0.1:8080/
+Visit: http://127.0.0.1:8080/a
 
 ```go
 package main
@@ -37,11 +37,11 @@ import (
 
 func main() {
 
-	limiter := fastlimiter.New(&fastlimiter.Options{})
+	limiter := fastlimiter.New(fastlimiter.Options{})
 
 	http.HandleFunc("/a", func(w http.ResponseWriter, r *http.Request) {
-
-		res, err := limiter.Get(r.URL.Path)
+		policy := []int{3, 30000, 2, 60000}
+		res, err := limiter.Get(r.URL.Path, policy...)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
@@ -68,4 +68,5 @@ func main() {
 	})
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
+
 ```

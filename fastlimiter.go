@@ -10,7 +10,7 @@ import (
 //Options ...
 type Options struct {
 	Prefix        string
-	Max           int32
+	Max           int
 	CleanDuration time.Duration
 	Duration      time.Duration
 }
@@ -45,9 +45,9 @@ type Result struct {
 }
 
 //New ...
-func New(opts *Options) (limiter *FastLimiter) {
+func New(opts Options) (limiter *FastLimiter) {
 	limiter = &FastLimiter{
-		options: opts,
+		options: &opts,
 	}
 	if limiter.options.Duration == 0 {
 		limiter.options.Duration = time.Minute
@@ -70,7 +70,7 @@ func New(opts *Options) (limiter *FastLimiter) {
 }
 
 //Get ...
-func (l *FastLimiter) Get(id string, policy ...int32) (result Result, err error) {
+func (l *FastLimiter) Get(id string, policy ...int) (result Result, err error) {
 
 	key := l.options.Prefix + id
 
@@ -78,10 +78,16 @@ func (l *FastLimiter) Get(id string, policy ...int32) (result Result, err error)
 	if odd := length % 2; odd == 1 {
 		return result, errors.New("fastlimiter: must be paired values")
 	}
+	var policy32 []int32
 	if length == 0 {
-		policy = []int32{l.options.Max, int32(l.options.Duration / time.Millisecond)}
+		policy32 = []int32{int32(l.options.Max), int32(l.options.Duration / time.Millisecond)}
+	} else {
+		policy32 = make([]int32, length)
+		for i := 0; i < length; i++ {
+			policy32[i] = int32(policy[i])
+		}
 	}
-	return l.getResult(key, policy...)
+	return l.getResult(key, policy32...)
 }
 
 //Remove ...
@@ -100,14 +106,6 @@ func (l *FastLimiter) Count() int {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 	return len(l.store)
-}
-
-//CleanCache ...
-func (l *FastLimiter) cleanCache() {
-	for now := range l.ticker.C {
-		var _ = now
-		l.Clean()
-	}
 }
 
 //Clean ...
@@ -241,4 +239,11 @@ func (l *FastLimiter) setStatusMapValue(key string, res *statusCacheItem) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 	l.status[key] = res
+}
+
+func (l *FastLimiter) cleanCache() {
+	for now := range l.ticker.C {
+		var _ = now
+		l.Clean()
+	}
 }
