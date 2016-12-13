@@ -95,6 +95,34 @@ func (l *FastLimiter) Remove(id string) {
 	delete(l.status, statusKey)
 }
 
+//Count ...
+func (l *FastLimiter) Count() int {
+	l.lock.RLock()
+	defer l.lock.RUnlock()
+	return len(l.store)
+}
+
+//CleanCache ...
+func (l *FastLimiter) cleanCache() {
+	for now := range l.ticker.C {
+		var _ = now
+		l.Clean()
+	}
+}
+
+//Clean ...
+func (l *FastLimiter) Clean() {
+	l.lock.Lock()
+	defer l.lock.Unlock()
+	for key, value := range l.store {
+		if value.Expire.Before(time.Now()) {
+			statusKey := "{" + key + "}:S"
+			delete(l.store, key)
+			delete(l.status, statusKey)
+		}
+	}
+}
+
 func (l *FastLimiter) getResult(id string, policy ...int32) (Result, error) {
 	var result Result
 	res := l.getLimit(id, policy...)
@@ -114,7 +142,7 @@ func (l *FastLimiter) getLimit(key string, args ...int32) (res *limiterCacheItem
 	var ok bool
 	if res, ok = l.getMapValue(key); ok {
 		if res.Expire.Before(time.Now()) {
-			res = l.initCacheItem(key, args...)
+			res = l.getItemFromCache(key, args...)
 		} else {
 			if atomic.LoadInt32(&res.Remaining) == -1 {
 				return
@@ -122,9 +150,75 @@ func (l *FastLimiter) getLimit(key string, args ...int32) (res *limiterCacheItem
 			atomic.AddInt32(&res.Remaining, -1)
 		}
 	} else {
+		res = l.getItemFromCache(key, args...)
+	}
+	return
+}
+func (l *FastLimiter) getItemFromCache(key string, args ...int32) (res *limiterCacheItem) {
+	policyCount := int32(len(args) / 2)
+	if policyCount < 2 {
+		res = l.handleSinglePolicy(key, args...)
+	} else {
 		res = l.initCacheItem(key, args...)
 	}
 	return
+}
+
+func (l *FastLimiter) handleSinglePolicy(key string, args ...int32) (res *limiterCacheItem) {
+
+	total := args[0]
+	duration := args[1]
+	res = &limiterCacheItem{
+		Total:     total,
+		Remaining: total - 1,
+		Duration:  time.Duration(duration) * time.Millisecond,
+		Expire:    time.Now().Add(time.Duration(duration) * time.Millisecond),
+	}
+	l.setMapValue(key, res)
+	return res
+}
+
+func (l *FastLimiter) initCacheItem(key string, args ...int32) (res *limiterCacheItem) {
+
+	policyCount := int32(len(args) / 2)
+	statusKey := "{" + key + "}:S"
+	var index int32 = 1
+
+	statusItem, ok := l.getStatusMapValue(statusKey)
+	if !ok {
+		statusItem = &statusCacheItem{
+			Index:  1,
+			Expire: time.Now().Add(time.Duration(args[1]) * time.Millisecond * 2),
+		}
+		res = l.handleSinglePolicy(key, args...)
+		l.setStatusMapValue(statusKey, statusItem)
+		return
+	}
+	if statusItem.Expire.Before(time.Now()) {
+		index = 1
+	} else {
+		index = statusItem.Index
+		if index >= policyCount {
+			index = policyCount
+		} else {
+			index++
+		}
+	}
+	total := args[(index*2)-2]
+	duration := args[(index*2)-1]
+
+	l.setStatusMapValue(statusKey, &statusCacheItem{
+		Index:  index,
+		Expire: time.Now().Add(time.Duration(duration) * time.Millisecond * 2),
+	})
+	res = &limiterCacheItem{
+		Total:     total,
+		Remaining: total - 1,
+		Duration:  time.Duration(duration) * time.Millisecond,
+		Expire:    time.Now().Add(time.Duration(duration) * time.Millisecond),
+	}
+	l.setMapValue(key, res)
+	return res
 }
 func (l *FastLimiter) getMapValue(key string) (res *limiterCacheItem, ok bool) {
 	l.lock.RLock()
@@ -147,75 +241,4 @@ func (l *FastLimiter) setStatusMapValue(key string, res *statusCacheItem) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 	l.status[key] = res
-}
-
-func (l *FastLimiter) initCacheItem(key string, args ...int32) (res *limiterCacheItem) {
-
-	policyCount := int32(len(args) / 2)
-	statusKey := "{" + key + "}:S"
-	total := args[0]
-	duration := args[1]
-	var statusItem *statusCacheItem
-
-	if policyCount > 1 {
-		var ok bool
-		statusItem, ok = l.getStatusMapValue(statusKey)
-		if !ok {
-			l.setStatusMapValue(statusKey, &statusCacheItem{
-				Index:  1,
-				Expire: time.Now().Add(time.Duration(duration) * time.Millisecond * 2),
-			})
-		} else {
-			index := atomic.LoadInt32(&statusItem.Index)
-			if index >= policyCount {
-				atomic.StoreInt32(&statusItem.Index, 1)
-			} else {
-				atomic.AddInt32(&statusItem.Index, 1)
-			}
-		}
-	}
-	if statusItem != nil {
-		total = args[(statusItem.Index*2)-2]
-		duration = args[(statusItem.Index*2)-1]
-		l.setStatusMapValue(statusKey, &statusCacheItem{
-			Index:  statusItem.Index,
-			Expire: time.Now().Add(time.Duration(duration) * time.Millisecond * 2),
-		})
-	}
-	res = &limiterCacheItem{
-		Total:     total,
-		Remaining: total - 1,
-		Duration:  time.Duration(duration) * time.Millisecond,
-		Expire:    time.Now().Add(time.Duration(duration) * time.Millisecond),
-	}
-	l.setMapValue(key, res)
-	return res
-}
-
-//Count ...
-func (l *FastLimiter) Count() int {
-	l.lock.RLock()
-	defer l.lock.RUnlock()
-	return len(l.store)
-}
-
-//CleanCache ...
-func (l *FastLimiter) cleanCache() {
-	for now := range l.ticker.C {
-		var _ = now
-
-	}
-}
-
-//Clean ...
-func (l *FastLimiter) Clean() {
-	l.lock.Lock()
-	defer l.lock.Unlock()
-	for key, value := range l.store {
-		if value.Expire.Before(time.Now()) {
-			statusKey := "{" + key + "}:S"
-			delete(l.store, key)
-			delete(l.status, statusKey)
-		}
-	}
 }

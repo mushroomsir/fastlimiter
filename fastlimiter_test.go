@@ -78,8 +78,10 @@ func TestFastlimiter(t *testing.T) {
 
 		id := genID()
 		policy := []int32{3, 100, 2, 200}
+
 		res, err := limiter.Get(id, policy...)
 		assert.Nil(err)
+		assert.Equal(3, res.Total)
 		assert.Equal(2, res.Remaining)
 		res, err = limiter.Get(id, policy...)
 		assert.Equal(1, res.Remaining)
@@ -93,7 +95,9 @@ func TestFastlimiter(t *testing.T) {
 
 		time.Sleep(res.Duration + time.Millisecond)
 		res, err = limiter.Get(id, policy...)
+		assert.Equal(2, res.Total)
 		assert.Equal(1, res.Remaining)
+		assert.Equal(time.Millisecond*200, res.Duration)
 
 		res, err = limiter.Get(id, policy...)
 		assert.Equal(0, res.Remaining)
@@ -102,7 +106,9 @@ func TestFastlimiter(t *testing.T) {
 
 		time.Sleep(res.Duration + time.Millisecond)
 		res, err = limiter.Get(id, policy...)
-		assert.Equal(2, res.Remaining)
+		assert.Equal(2, res.Total)
+		assert.Equal(1, res.Remaining)
+		assert.Equal(time.Millisecond*200, res.Duration)
 	})
 
 	t.Run("Fastlimiter with Remove id should be", func(t *testing.T) {
@@ -216,6 +222,101 @@ func TestFastlimiter(t *testing.T) {
 		limiter.Get("1", []int32{100, 100}...)
 		limiter.Get("2", []int32{100, 100}...)
 		assert.Equal(2, limiter.Count())
+	})
+	t.Run("limiter.Get with multi-policy for expired", func(t *testing.T) {
+		assert := assert.New(t)
+		id := genID()
+		policy := []int32{2, 500, 2, 1000, 1, 1000, 1, 1200}
+		limiter := fastlimiter.New(&fastlimiter.Options{})
+
+		//First policy
+		res, err := limiter.Get(id, policy...)
+		assert.Nil(err)
+		assert.Equal(2, res.Total)
+		assert.Equal(1, res.Remaining)
+		assert.Equal(res.Duration, time.Millisecond*500)
+
+		res, err = limiter.Get(id, policy...)
+		assert.Equal(0, res.Remaining)
+
+		res, err = limiter.Get(id, policy...)
+		assert.Equal(-1, res.Remaining)
+
+		//Second policy
+		time.Sleep(res.Duration + time.Millisecond)
+		res, err = limiter.Get(id, policy...)
+		assert.Equal(2, res.Total)
+		assert.Equal(1, res.Remaining)
+		assert.Equal(res.Duration, time.Millisecond*1000)
+
+		res, err = limiter.Get(id, policy...)
+		assert.Equal(0, res.Remaining)
+
+		res, err = limiter.Get(id, policy...)
+		assert.Equal(-1, res.Remaining)
+
+		//Third policy
+		time.Sleep(res.Duration + time.Millisecond)
+		res, err = limiter.Get(id, policy...)
+		assert.Equal(1, res.Total)
+		assert.Equal(0, res.Remaining)
+		assert.Equal(res.Duration, time.Second)
+
+		res, err = limiter.Get(id, policy...)
+		assert.Equal(-1, res.Remaining)
+
+		// restore to First policy after Third policy*2 Duration
+		time.Sleep(res.Duration*2 + time.Millisecond)
+		res, err = limiter.Get(id, policy...)
+		assert.Equal(2, res.Total)
+		assert.Equal(1, res.Remaining)
+		assert.Equal(res.Duration, time.Millisecond*500)
+
+		//Second policy
+		time.Sleep(res.Duration + time.Millisecond)
+		res, err = limiter.Get(id, policy...)
+		assert.Equal(2, res.Total)
+		assert.Equal(1, res.Remaining)
+		assert.Equal(res.Duration, time.Millisecond*1000)
+
+		res, err = limiter.Get(id, policy...)
+		assert.Equal(0, res.Remaining)
+
+		res, err = limiter.Get(id, policy...)
+		assert.Equal(-1, res.Remaining)
+
+		//Third policy
+		time.Sleep(res.Duration + time.Millisecond)
+		res, err = limiter.Get(id, policy...)
+		assert.Equal(1, res.Total)
+		assert.Equal(0, res.Remaining)
+		assert.Equal(res.Duration, time.Second*1)
+
+		res, err = limiter.Get(id, policy...)
+		assert.Equal(-1, res.Remaining)
+
+		//Fourth policy
+		time.Sleep(res.Duration + time.Millisecond)
+		res, err = limiter.Get(id, policy...)
+		assert.Equal(1, res.Total)
+		assert.Equal(0, res.Remaining)
+		assert.Equal(res.Duration, time.Millisecond*1200)
+
+		res, err = limiter.Get(id, policy...)
+		assert.Equal(1, res.Total)
+		assert.Equal(-1, res.Remaining)
+
+		res, err = limiter.Get(id, policy...)
+		assert.Equal(1, res.Total)
+		assert.Equal(-1, res.Remaining)
+
+		// restore to First policy after Fourth policy*2 Duration
+		time.Sleep(res.Duration*2 + time.Millisecond)
+		res, err = limiter.Get(id, policy...)
+		assert.Equal(2, res.Total)
+		assert.Equal(1, res.Remaining)
+		assert.Equal(res.Duration, time.Millisecond*500)
+
 	})
 }
 
