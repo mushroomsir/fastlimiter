@@ -209,9 +209,13 @@ func (l *FastLimiter) cleanCache() {
 
 //Clean ...
 func (l *FastLimiter) Clean() {
+	l.lock.Lock()
+	defer l.lock.Unlock()
 	for key, value := range l.store {
 		if value.Expire.Before(time.Now()) {
-			l.Remove(key)
+			statusKey := "{" + key + "}:S"
+			delete(l.store, key)
+			delete(l.status, statusKey)
 		}
 	}
 }

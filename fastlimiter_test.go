@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -176,10 +177,12 @@ func TestFastlimiter(t *testing.T) {
 		limiter := fastlimiter.New(&fastlimiter.Options{})
 		policy := []int32{1000, 1000}
 		id := genID()
-		for i := 0; i < 1000; i++ {
+		for i := 0; i < 10000; i++ {
+			go limiter.Get(strconv.Itoa(i), policy...)
 			go limiter.Get(id, policy...)
+			go limiter.Clean()
 		}
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 
 		res, err := limiter.Get(id, policy...)
 		assert.Nil(err)
