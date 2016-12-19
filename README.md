@@ -70,3 +70,17 @@ func main() {
 }
 
 ```
+
+## Benchmark and Test
+```sh
+go test -bench="."
+```
+```sh
+BenchmarkGet-4                            100000               409 ns/op              96 B/op          3 allocs/op
+BenchmarkGetAndEexceeding-4               100000               379 ns/op              96 B/op          3 allocs/op
+BenchmarkGetAndParallel-4                 100000               389 ns/op              96 B/op          3 allocs/op
+BenchmarkGetAndClean-4                     10000               399 ns/op              96 B/op          3 allocs/op
+BenchmarkGetForDifferentUser-4             10000              1600 ns/op             466 B/op          8 allocs/op
+PASS
+ok      github.com/mushroomsir/fastlimiter      6.121s
+```

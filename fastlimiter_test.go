@@ -3,7 +3,7 @@ package fastlimiter_test
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -144,8 +144,8 @@ func TestFastlimiter(t *testing.T) {
 		policy := []int{}
 
 		res, _ := limiter.Get(id, policy...)
-		assert.Equal(1000, res.Total)
-		assert.Equal(999, res.Remaining)
+		assert.Equal(100, res.Total)
+		assert.Equal(99, res.Remaining)
 		assert.Equal(time.Minute, res.Duration)
 
 	})
@@ -172,18 +172,30 @@ func TestFastlimiter(t *testing.T) {
 		res, _ = limiter.Get(id, policy...)
 		assert.Equal(10, res.Total)
 		assert.Equal(9, res.Remaining)
+
+		time.Sleep(res.Duration*2 + 100*time.Millisecond)
+		limiter.Clean()
+		res, _ = limiter.Get(id, policy...)
+		assert.Equal(10, res.Total)
+		assert.Equal(9, res.Remaining)
 	})
 	t.Run("Fastlimiter with big goroutine should be", func(t *testing.T) {
 		assert := assert.New(t)
 		limiter := fastlimiter.New(fastlimiter.Options{})
 		policy := []int{1000, 1000}
 		id := genID()
-		for i := 0; i < 10000; i++ {
-			go limiter.Get(strconv.Itoa(i), policy...)
-			go limiter.Get(id, policy...)
-			go limiter.Clean()
+
+		var wg sync.WaitGroup
+		wg.Add(1000)
+		for i := 0; i < 1000; i++ {
+			go func() {
+				newid := genID()
+				limiter.Get(newid, policy...)
+				limiter.Get(id, policy...)
+				wg.Done()
+			}()
 		}
-		time.Sleep(500 * time.Millisecond)
+		wg.Wait()
 
 		res, err := limiter.Get(id, policy...)
 		assert.Nil(err)
@@ -218,10 +230,10 @@ func TestFastlimiter(t *testing.T) {
 		limiter.Get("2", []int{100, 100}...)
 		assert.Equal(2, limiter.Count())
 	})
-	t.Run("limiter.Get with multi-policy for expired", func(t *testing.T) {
+	t.Run("Fastlimiter.Get with multi-policy for expired", func(t *testing.T) {
 		assert := assert.New(t)
 		id := genID()
-		policy := []int{2, 500, 2, 1000, 1, 1000, 1, 1200}
+		policy := []int{2, 100, 2, 200, 1, 200, 1, 300}
 		limiter := fastlimiter.New(fastlimiter.Options{})
 
 		//First policy
@@ -229,7 +241,7 @@ func TestFastlimiter(t *testing.T) {
 		assert.Nil(err)
 		assert.Equal(2, res.Total)
 		assert.Equal(1, res.Remaining)
-		assert.Equal(res.Duration, time.Millisecond*500)
+		assert.Equal(res.Duration, time.Millisecond*100)
 
 		res, err = limiter.Get(id, policy...)
 		assert.Equal(0, res.Remaining)
@@ -242,7 +254,7 @@ func TestFastlimiter(t *testing.T) {
 		res, err = limiter.Get(id, policy...)
 		assert.Equal(2, res.Total)
 		assert.Equal(1, res.Remaining)
-		assert.Equal(res.Duration, time.Millisecond*1000)
+		assert.Equal(res.Duration, time.Millisecond*200)
 
 		res, err = limiter.Get(id, policy...)
 		assert.Equal(0, res.Remaining)
@@ -255,7 +267,7 @@ func TestFastlimiter(t *testing.T) {
 		res, err = limiter.Get(id, policy...)
 		assert.Equal(1, res.Total)
 		assert.Equal(0, res.Remaining)
-		assert.Equal(res.Duration, time.Second)
+		assert.Equal(res.Duration, time.Millisecond*200)
 
 		res, err = limiter.Get(id, policy...)
 		assert.Equal(-1, res.Remaining)
@@ -265,14 +277,14 @@ func TestFastlimiter(t *testing.T) {
 		res, err = limiter.Get(id, policy...)
 		assert.Equal(2, res.Total)
 		assert.Equal(1, res.Remaining)
-		assert.Equal(res.Duration, time.Millisecond*500)
+		assert.Equal(res.Duration, time.Millisecond*100)
 
 		//Second policy
 		time.Sleep(res.Duration + time.Millisecond)
 		res, err = limiter.Get(id, policy...)
 		assert.Equal(2, res.Total)
 		assert.Equal(1, res.Remaining)
-		assert.Equal(res.Duration, time.Millisecond*1000)
+		assert.Equal(res.Duration, time.Millisecond*200)
 
 		res, err = limiter.Get(id, policy...)
 		assert.Equal(0, res.Remaining)
@@ -285,7 +297,7 @@ func TestFastlimiter(t *testing.T) {
 		res, err = limiter.Get(id, policy...)
 		assert.Equal(1, res.Total)
 		assert.Equal(0, res.Remaining)
-		assert.Equal(res.Duration, time.Second*1)
+		assert.Equal(res.Duration, time.Millisecond*200)
 
 		res, err = limiter.Get(id, policy...)
 		assert.Equal(-1, res.Remaining)
@@ -295,7 +307,7 @@ func TestFastlimiter(t *testing.T) {
 		res, err = limiter.Get(id, policy...)
 		assert.Equal(1, res.Total)
 		assert.Equal(0, res.Remaining)
-		assert.Equal(res.Duration, time.Millisecond*1200)
+		assert.Equal(res.Duration, time.Millisecond*300)
 
 		res, err = limiter.Get(id, policy...)
 		assert.Equal(1, res.Total)
@@ -310,8 +322,23 @@ func TestFastlimiter(t *testing.T) {
 		res, err = limiter.Get(id, policy...)
 		assert.Equal(2, res.Total)
 		assert.Equal(1, res.Remaining)
-		assert.Equal(res.Duration, time.Millisecond*500)
+		assert.Equal(res.Duration, time.Millisecond*100)
 
+	})
+	t.Run("Fastlimiter.Get with invalid args", func(t *testing.T) {
+		assert := assert.New(t)
+		id := genID()
+		limiter := fastlimiter.New(fastlimiter.Options{})
+
+		_, err := limiter.Get(id, 10)
+		assert.Equal("fastlimiter: must be paired values", err.Error())
+
+		_, err2 := limiter.Get(id, -1, 10)
+		assert.Equal("fastlimiter: must be positive integer", err2.Error())
+
+		_, err3 := limiter.Get(id, 10, 0)
+
+		assert.Equal("fastlimiter: must be positive integer", err3.Error())
 	})
 }
 
